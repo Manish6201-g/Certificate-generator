@@ -100,6 +100,13 @@
   const progressFill = document.getElementById('progressFill');
   const progressLbl  = document.getElementById('progressLbl');
 
+  const genRecipientName   = document.getElementById('genRecipientName');
+  const btnDownloadForName = document.getElementById('btnDownloadForName');
+  const btnAddToListBtn    = document.getElementById('btnAddToListBtn');
+  const manualName         = document.getElementById('manualName');
+  const manualEmail        = document.getElementById('manualEmail');
+  const btnManualAddRow    = document.getElementById('btnManualAddRow');
+
   const zoomInBtn   = document.getElementById('zoomIn');
   const zoomOutBtn  = document.getElementById('zoomOut');
   const zoomLbl     = document.getElementById('zoomLbl');
@@ -410,7 +417,10 @@
       // Apply row overrides for the currently previewed row
       const field = getEffectiveField(baseField, state.previewRowIdx);
 
-      const value = previewRow ? (previewRow[field.key] || `[${field.key}]`) : `[${field.key}]`;
+      let value = previewRow ? (previewRow[field.key] || `[${field.key}]`) : `[${field.key}]`;
+      if (genRecipientName && genRecipientName.value.trim() && field.key.toLowerCase().includes('name')) {
+        value = genRecipientName.value.trim();
+      }
       const x = field.x * w;
       const y = field.y * h;
 
@@ -493,7 +503,10 @@
       const oc = off.getContext('2d');
       oc.drawImage(state.image, 0, 0, state.naturalW, state.naturalH);
       for (const baseField of state.fields) {
-        const value = rowData[baseField.key] || '';
+        let value = rowData[baseField.key] || '';
+        if (!value && baseField.key.toLowerCase().includes('name') && rowData.name) {
+          value = rowData.name;
+        }
         if (!value) continue;
         const field = getEffectiveField(baseField, rowIdx);
         drawFieldOnCtx(oc, field, value, field.x * state.naturalW, field.y * state.naturalH);
@@ -510,18 +523,94 @@
     });
   }
 
-  // ── Download ───────────────────────────────────────────────────────
+  // ── Download & Generation ──────────────────────────────────────────
   function safeName(n) {
     return String(n).replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 60) || 'certificate';
   }
 
+  function ensureNameField() {
+    const hasNameField = state.fields.some(f => f.key.toLowerCase().includes('name'));
+    if (!hasNameField) {
+      if (!state.excelColumns.includes('name')) {
+        state.excelColumns.unshift('name');
+        buildColumnChips(state.excelColumns);
+      }
+      addField('name', 0.5, 0.48);
+    }
+  }
+
+  async function downloadForName() {
+    if (!state.image) { toast('Load a certificate template first', 'warning'); return; }
+    ensureNameField();
+
+    let name = (genRecipientName && genRecipientName.value.trim()) || '';
+    if (!name) {
+      const row = state.excelData[state.previewRowIdx];
+      const nameKey = state.excelColumns.find(k => k.includes('name')) || state.excelColumns[0];
+      if (row && nameKey && row[nameKey]) {
+        name = row[nameKey];
+      }
+    }
+
+    if (!name) {
+      name = prompt('Enter recipient name for the certificate:', 'Recipient Name');
+      if (!name || !name.trim()) return;
+      name = name.trim();
+      if (genRecipientName) genRecipientName.value = name;
+      render();
+    }
+
+    const rowIdx = state.previewRowIdx;
+    const baseRow = state.excelData[rowIdx] || {};
+    const nameKey = state.excelColumns.find(k => k.includes('name')) || 'name';
+    const rowData = { ...baseRow, [nameKey]: name, name };
+
+    const blob = await generateCertBlob(rowData, rowIdx);
+    const label = safeName(name);
+    triggerDownload(blob, `${label}_certificate.png`);
+    toast(`Certificate for "${name}" downloaded!`, 'success');
+  }
+
+  function addManualRecipient(name, email = '') {
+    if (!name || !name.trim()) {
+      toast('Please enter a recipient name', 'warning');
+      return;
+    }
+    const cleanName = name.trim();
+    const cleanEmail = email ? email.trim() : '';
+
+    if (!state.excelColumns.includes('name')) {
+      state.excelColumns = ['name', 'email'];
+      buildColumnChips(state.excelColumns);
+    }
+
+    ensureNameField();
+
+    const nameKey = state.excelColumns.find(k => k.includes('name')) || 'name';
+    const emailKey = state.excelColumns.find(k => k.includes('email')) || 'email';
+
+    const newRow = { [nameKey]: cleanName, [emailKey]: cleanEmail, name: cleanName, email: cleanEmail };
+    state.excelData.push(newRow);
+
+    renderExcelPreview();
+    updateBulkBtn();
+    updateSendBtn();
+    selectPreviewRow(state.excelData.length - 1);
+    toast(`Added "${cleanName}" to recipient list`, 'success');
+  }
+
   async function downloadPreview() {
     if (!state.image) { toast('Load a certificate template first', 'warning'); return; }
+    ensureNameField();
     const rowIdx = state.previewRowIdx;
-    const rowData = state.excelData[rowIdx] || {};
-    const blob = await generateCertBlob(rowData, rowIdx);
+    let rowData = state.excelData[rowIdx] || {};
+    const customName = (genRecipientName && genRecipientName.value.trim()) || '';
+    if (customName) {
+      rowData = { ...rowData, name: customName };
+    }
     const nameKey = state.excelColumns.find(k => k.includes('name')) || state.excelColumns[0];
-    const label = (nameKey && rowData[nameKey]) ? safeName(rowData[nameKey]) : 'preview';
+    const label = (nameKey && rowData[nameKey]) ? safeName(rowData[nameKey]) : (customName ? safeName(customName) : 'preview');
+    const blob = await generateCertBlob(rowData, rowIdx);
     triggerDownload(blob, `${label}_certificate.png`);
     toast('Preview downloaded!', 'success');
   }
@@ -679,6 +768,12 @@
 
     updateTableRowHighlights();
     updateRowIndicator();
+    if (genRecipientName && state.excelData[rowIdx]) {
+      const nameKey = state.excelColumns.find(k => k.includes('name')) || state.excelColumns[0];
+      if (nameKey && state.excelData[rowIdx][nameKey]) {
+        genRecipientName.value = state.excelData[rowIdx][nameKey];
+      }
+    }
     render();
   }
 
@@ -981,6 +1076,50 @@
   // ── Download buttons ───────────────────────────────────────────────
   btnDownload.addEventListener('click', downloadPreview);
   btnBulk.addEventListener('click', downloadBulk);
+
+  if (btnDownloadForName) {
+    btnDownloadForName.addEventListener('click', downloadForName);
+  }
+
+  if (genRecipientName) {
+    genRecipientName.addEventListener('input', () => {
+      render();
+    });
+    genRecipientName.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        downloadForName();
+      }
+    });
+  }
+
+  if (btnAddToListBtn) {
+    btnAddToListBtn.addEventListener('click', () => {
+      const name = genRecipientName ? genRecipientName.value.trim() : '';
+      if (!name) { toast('Type a recipient name first', 'warning'); return; }
+      addManualRecipient(name);
+    });
+  }
+
+  if (btnManualAddRow) {
+    btnManualAddRow.addEventListener('click', () => {
+      const name = manualName ? manualName.value.trim() : '';
+      const email = manualEmail ? manualEmail.value.trim() : '';
+      if (!name) { toast('Please enter a recipient name', 'warning'); return; }
+      addManualRecipient(name, email);
+      if (manualName) manualName.value = '';
+      if (manualEmail) manualEmail.value = '';
+    });
+  }
+
+  if (manualName) {
+    manualName.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (btnManualAddRow) btnManualAddRow.click();
+      }
+    });
+  }
 
   // ── Modal helpers ──────────────────────────────────────────────────
   function openModal(modal) {
@@ -1536,6 +1675,11 @@
       state.naturalH = img.naturalHeight;
       autoFitZoom();
       hideDropZone();
+      if (!state.excelColumns.length) {
+        state.excelColumns = ['name'];
+        buildColumnChips(state.excelColumns);
+      }
+      ensureNameField();
       render();
       URL.revokeObjectURL(url);
       toast(`Certificate loaded — ${state.naturalW}×${state.naturalH}px`, 'success');

@@ -397,6 +397,13 @@ input[type="range"] {
   font-family: inherit;
 }
 
+.btn-primary {
+  background: var(--accent);
+  color: #ffffff;
+}
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-primary:active { transform: scale(0.98); }
+
 .btn-outline {
   background: transparent;
   color: var(--accent);
