@@ -1731,7 +1731,39 @@
     img.src = 'assets/template.png';
   }
 
+  // ── Theme toggle (Light & Dark Neumorphism) ─────────────────────────
+  const themeToggleBtn   = document.getElementById('themeToggleBtn');
+  const themeToggleIcon  = document.getElementById('themeToggleIcon');
+  const themeToggleLabel = document.getElementById('themeToggleLabel');
+
+  function applyTheme(theme) {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      if (themeToggleIcon)  themeToggleIcon.textContent  = '🌙';
+      if (themeToggleLabel) themeToggleLabel.textContent = 'Dark Soft UI';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      if (themeToggleIcon)  themeToggleIcon.textContent  = '☀️';
+      if (themeToggleLabel) themeToggleLabel.textContent = 'Light Soft UI';
+    }
+    localStorage.setItem('certgen_theme', theme);
+  }
+
+  function initTheme() {
+    const saved = localStorage.getItem('certgen_theme') || 'light';
+    applyTheme(saved);
+    if (themeToggleBtn) {
+      themeToggleBtn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        applyTheme(next);
+        toast(`Switched to ${next === 'dark' ? 'Dark' : 'Light'} Neumorphism`, 'success');
+      });
+    }
+  }
+
   // ── Init ───────────────────────────────────────────────────────────
+  initTheme();
   fontTriggerLabel.style.fontFamily = state.committedFont;
   buildVarChips();
   loadSmtpFromStorage();
